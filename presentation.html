@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Memory management strategies</title>
+    <meta charset="utf-8">
+        <link rel="stylesheet" type="text/css" href="https://sfc-arch.github.io/remark-theme/blue_standard/remark_theme_blue_standard.css"/>
+<style>
+.quote.no-decor:before {
+    content: none;
+}
+
+.quote.no-decor:after {
+    content: none;
+}
+</style>
+<!--    <style>
+
+
+      @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+      @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+      @import url(https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic);
+
+      body { font-family: 'Droid Serif'; }
+      h1, h2, h3 {
+        font-family: 'Yanone Kaffeesatz';
+        font-weight: normal;
+      }
+      .remark-code, .remark-inline-code { font-family: 'Ubuntu Mono'; }
+      .inverse { filter: invert(100%) }
+
+
+
+
+
+
+
+</style>-->
+  </head>
+  <body>
+    <textarea id="source">
+
+class: title
+
+# Memory management strategies
+### Garbage Collector vs Rust Ownership Model
+
+---
+
+## Who am I?
+
+## Barłomiej Kuras
+
+* About 6 years as C++ developer
+    * Nokia
+    * DeLaval
+    * Imagination
+    * CreditSuisse
+* Over half an year as Rust developer in Anixe
+* Member of Rust Wrocław
+
+---
+
+## Agenda
+
+* Memory
+* Garbage Collection
+* Rust Ownership Model
+* Other benefits
+
+---
+
+## Memory
+
+* Stack
+    * Quick allocation/deallocation
+    * Restricted in size
+    * Lifetime restricted to "stack frame"
+
+---
+
+## Memory
+
+* Stack
+    * Quick allocation/deallocation
+    * Restricted in size
+    * Lifetime restricted to "stack frame"
+
+
+* Heap
+    * Slow allocation/deallocation
+    * More memory available
+    * Memory leaks
+
+---
+
+## Memory
+
+* Stack
+    * Quick allocation/deallocation
+    * Restricted in size
+    * Lifetime restricted to "stack frame"
+
+
+* Heap
+    * Slow allocation/deallocation
+    * More memory available
+    * Memory leaks
+
+.center[
+### Memory leak
+Situation when allocated memory cannot be returned to system while application is running
+]
+
+---
+
+## Garbage Collection
+
+* Reference Counting
+    * Lisp, Python, C++
+    * Simple to implement
+    * Cycles may lead to leaks
+        * Avoiding cycles
+        * Generation Garbage Collector (Python)
+        * Weak pointers (C++)
+
+---
+
+## Garbage Collection
+
+* Reference Counting
+    * Lisp, Python, C++
+    * Simple to implement
+    * Cycles may lead to leaks
+        * Avoiding cycles
+        * Generation Garbage Collector (Python)
+        * Weak pointers (C++)
+
+
+* Mark and Sweep
+    * Java, C#, D
+    * Resistant to any memory leaks
+    * Faster than Reference Counting
+
+---
+
+## Garbage Collection
+
+.quote.no-decor[
+> Garbage collected programs are often faster. This is counterintuitive, but the reasons are: 
+> * Reference counting is a common solution to solve explicit memory allocation problems.
+> * Garbage collection kicks in only when memory gets tight. When memory is not tight, the program runs at full speed and does not spend any time tracing and freeing memory.
+]
+
+From D homepage: https://dlang.org/spec/garbage.html
+---
+
+class: center, middle
+
+# So why we even matter? Just use GC!
+
+---
+
+## So why we even matter?
+
+### Zero overhead rule
+
+* Microcontrollers
+* MIPS (GPUs)
+* Resource limited environments
+* Fast calculations (eg. Gamedev industry)
+
+---
+
+## So why we even matter?
+
+### Zero overhead rule
+
+* Microcontrollers
+* MIPS (GPUs)
+* Resource limited environments
+* Fast calculations (eg. Gamedev industry)
+
+### But how?
+
+> Reference counting is a common solution to solve explicit memory allocation problems.
+
+---
+
+class: center, middle
+
+# Memory management by static analysis
+
+---
+
+## Scoped stack allocations
+
+```rust
+fn foo() {
+    let _x = [4; 100];
+    // _x memory is released (everything on stack)
+}
+```
+
+---
+
+## RAII
+
+```rust
+fn foo() {
+    let _x = vec![4; 100];
+    // _x memory is released (both stack and heap)
+}
+
+fn bar() {
+    let _x = Box::new(5);
+    // _x memory is released (both stack and heap)
+}
+```
+
+---
+
+## Moving by default
+
+```rust
+fn foo(_arg: Vec<u32>) {
+    // _arg memory is released
+}
+
+fn bar() {
+    vec![4; 100] // created Vec is moved while retuned to calee
+    // nothing is released
+}
+
+fn main() {
+    let x = vec![4; 100];
+    foo(x); // x is moved into "foo", so it's responsible to release its memory
+    let _y = bar();
+    // _y memory is released
+}
+```
+---
+
+## Borrows
+
+```rust
+fn foo(_arg: &Vec<u32>) {
+    // _arg only borrowed, will be released by calee, not here
+}
+
+fn foo(_arg: &mut Vec<u32>) {
+    // _arg only borrowed, will be released by calee, not here
+}
+```
+
+---
+
+## Problem: releasing borrowed data
+
+```cpp
+struct A {
+    std::vector<int> & x;
+};
+
+A foo() {
+    std::vector<int> x(4, 100);
+    return A { x };
+}
+
+int main() {
+    auto x = foo(); // We have handler to some vector which doesn't exist!
+}
+```
+
+---
+
+## Solution: lifetimes
+
+```rust
+struct A<'a> {
+    x: &'a Vec<u32>,
+}
+
+fn foo() -> A { // Compiler error - lifetime is missing
+    let x = vec![4; 100];
+    A { &x }
+}
+
+fn main() {
+    let x = foo();
+}
+```
+
+---
+
+## Lifetimes
+
+```rust
+struct A<'a> {
+    x: &'a [u32],
+}
+
+fn foo<'a>(a: &'a [u32]) -> A<'a> {
+    let x = &a[3..5];
+    A { x }
+}
+
+fn main() {
+    let x = foo(&vec![4; 100]);
+}
+```
+
+---
+
+## Lifetimes
+
+```rust
+struct A<'a> {
+    x: &'a [u32],
+}
+
+fn foo<'a>(a: &'a [u32]) -> A<'a> {
+    let x = &a[3..5];
+    A { x }
+}
+
+fn main() {
+    let x = foo(&vec![4; 100]);
+    println!("{}", x[4]);
+}
+```
+
+---
+
+## Lifetimes
+
+```rust
+struct A<'a> {
+    x: &'a [u32],
+}
+
+fn foo<'a>(a: &'a [u32]) -> A<'a> {
+    let x = &a[3..5];
+    A { x }
+}
+
+fn main() {
+    let x = foo(&vec![4; 100]);
+    println!("{}", x[4]); // x doesn't live long enaugh
+}
+```
+
+---
+
+## Lifetimes
+
+```rust
+struct A<'a> {
+    x: &'a [u32],
+}
+
+fn foo<'a>(a: &'a [u32]) -> A<'a> {
+    let x = &a[3..5];
+    A { x }
+}
+
+fn main() {
+    let a = vec![4; 100];
+    let x = foo(&a);
+    println!("{}", x[4]);
+}
+```
+
+---
+
+## Runtime Memory management
+### Other memory management strategies still available when benefitial
+
+* Reference counters via `Rc`, `Arc`, `Weak`
+* Garbage collector via `crossbeam-epoch`, `gc`
+
+---
+
+class: center, middle, inverse
+
+# Ok, but in most cases GC is good enaught - any other benefits?
+
+---
+
+## Iterator invalidation
+
+```Java
+public static void main(String[] args) {
+    List<String> list = new ArrayList<String>();
+    // Some elements added
+
+    Iterator<String> it = list.iterator();
+    String s = it.next();
+    System.out.println(s);
+    s = it.next();
+    System.out.println(s);
+
+    Collections.sort(list);
+    Iterator<String> it2 = list.iterator();
+
+    s = it.next();
+    System.out.println(s);
+
+    while (it2.hasNext()) {
+        System.out.println(it2.next());
+    }
+}
+```
+
+---
+
+## Iterator invalidation
+### Compilation error in Rust
+
+```rust
+fn main() {
+    let mut list = vec!["A", "B", "C"];
+    let it = list.iter();
+
+    list.sort(); // Error in rust - list mutated while borrowed
+    it.next();
+}
+```
+
+---
+
+## Iterator invalidation
+### Compilation error in rust
+
+```rust
+fn main() {
+    let mut list = vec!["A", "B", "C"];
+    let it = list.iter();
+
+    list.sort(); // Error in rust - list mutated while borrowed
+    it.next();
+}
+```
+
+### Borrowing rules
+* Any object may be borrowed read-only any number of times, unless its not currently borrowed mutably
+* Any object may be borrowed mutably exactly once, unless its not currently borrowed read-only
+
+---
+
+## Iterator invalidation
+### Borrowing rules
+* Any object may be borrowed read-only any number of times, unless its not currently borrowed mutably
+* Any object may be borrowed mutably exactly once, unless its not currently borrowed read-only
+
+.center[
+### This requires lifetime tracking to determine what does *currently borrowed* mean
+]
+
+---
+
+## Data races - impossible in Rust
+
+```rust
+fn main() {
+    let mut x = 15;
+    thread::spawn(|| println!(x));
+    thread::spawn(|| x += 5);
+}
+```
+
+---
+
+class: title
+
+# Thank you
+    </textarea>
+    <script src="https://remarkjs.com/downloads/remark-latest.min.js">
+    </script>
+    <script>
+      var slideshow = remark.create();
+    </script>
+  </body>
+</html>
