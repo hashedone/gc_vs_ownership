@@ -13,28 +13,6 @@
     content: none;
 }
 </style>
-<!--    <style>
-
-
-      @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
-      @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
-      @import url(https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic);
-
-      body { font-family: 'Droid Serif'; }
-      h1, h2, h3 {
-        font-family: 'Yanone Kaffeesatz';
-        font-weight: normal;
-      }
-      .remark-code, .remark-inline-code { font-family: 'Ubuntu Mono'; }
-      .inverse { filter: invert(100%) }
-
-
-
-
-
-
-
-</style>-->
   </head>
   <body>
     <textarea id="source">
@@ -98,7 +76,7 @@ class: title
 * Stack
     * Quick allocation/deallocation
     * Restricted in size
-    * Lifetime restricted to "stack frame"
+    * Lifetime restricted to a "stack frame"
 
 
 * Heap
@@ -120,7 +98,7 @@ Situation when allocated memory cannot be returned to system while application i
     * Simple to implement
     * Cycles may lead to leaks
         * Avoiding cycles
-        * Generation Garbage Collector (Python)
+        * Generational Garbage Collector (Python)
         * Weak pointers (C++)
 
 ---
@@ -132,7 +110,7 @@ Situation when allocated memory cannot be returned to system while application i
     * Simple to implement
     * Cycles may lead to leaks
         * Avoiding cycles
-        * Generation Garbage Collector (Python)
+        * Generational Garbage Collector (Python)
         * Weak pointers (C++)
 
 
@@ -156,28 +134,28 @@ From D homepage: https://dlang.org/spec/garbage.html
 
 class: center, middle
 
-# So why we even matter? Just use GC!
+# So why we even bother? Just use GC!
 
 ---
 
-## So why we even matter?
+## So why we even bother?
 
 ### Zero overhead rule
 
 * Microcontrollers
 * MIPS (GPUs)
-* Resource limited environments
+* Resources limited environments
 * Fast calculations (eg. Gamedev industry)
 
 ---
 
-## So why we even matter?
+## So why we even bother?
 
 ### Zero overhead rule
 
 * Microcontrollers
 * MIPS (GPUs)
-* Resource limited environments
+* Resources limited environments
 * Fast calculations (eg. Gamedev industry)
 
 ### But how?
@@ -233,7 +211,8 @@ fn bar() {
 
 fn main() {
     let x = vec![4; 100];
-    foo(x); // x is moved into "foo", so it's responsible to release its memory
+    foo(x); // x is moved into "foo",
+            // so "foo" responsible for releasing xs memory
     let _y = bar();
     // _y memory is released
 }
@@ -267,7 +246,8 @@ A foo() {
 }
 
 int main() {
-    auto x = foo(); // We have handler to some vector which doesn't exist!
+    auto x = foo(); // We have handler to some vector
+                    // which doesn't exist!
 }
 ```
 
@@ -345,7 +325,7 @@ fn foo<'a>(a: &'a [u32]) -> A<'a> {
 
 fn main() {
     let x = foo(&vec![4; 100]);
-    println!("{}", x[4]); // x doesn't live long enaugh
+    println!("{}", x[4]); // x doesn't live long enough
 }
 ```
 
@@ -382,7 +362,7 @@ fn main() {
 
 class: center, middle, inverse
 
-# Ok, but in most cases GC is good enaught - any other benefits?
+# Ok, but in most cases GC is good enough - any other benefits?
 
 ---
 
@@ -467,6 +447,57 @@ fn main() {
     thread::spawn(|| x += 5);
 }
 ```
+
+---
+
+## Memory leaks
+
+```rust
+struct A {
+    b: Cell<Option<std::rc::Rc<B>>>,
+}
+
+struct B {
+    a: std::rc::Rc<A>,
+}
+
+fn main() {
+    let x = vec![4; 100];
+    mem::forget(x); // Memory explicitly leaked
+
+    let y = Box::new([4; 100]);
+    Box::leak(y); // Memory explicitly leaked
+
+    let a = Rc::new(A { b: Cell::new(None) });
+    let b = Rc::new(B { a });
+    b.a.b.set(Some(b.clone()));
+    // Memory leak by `Rc` cycle
+}
+```
+
+---
+
+## Afterwords
+
+### Pros
+* All in compile time - zero runtime overhead
+* Other stategies possible to implement on top of it
+* Allows protection from memory corruption and data races
+
+---
+
+## Afterwords
+
+### Pros
+* All in compile time - zero runtime overhead
+* Other stategies possible to implement on top of it
+* Allows protection from memory corruption and data races
+
+
+### Cons
+* Steep learning curve
+* Doesn't protect from memory leaks
+* Doesn't work well with highly mutation based patterns
 
 ---
 
